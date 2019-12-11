@@ -1,1 +1,3 @@
-// js code here
+import { Smoke } from './modules/smoke'
+
+var firestorm = new Smoke()
