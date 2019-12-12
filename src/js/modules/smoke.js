@@ -31,7 +31,7 @@ export class Smoke {
 
         this.settings.max = 20
 
-        this.settings.geotiff = "<%= path %>/assets/fin.tif"
+        this.settings.geotiff = "<%= path %>/assets/boom.tif"
 
         this.settings.bbox = {
             "type": "Feature",
@@ -78,11 +78,13 @@ export class Smoke {
 
             self.database = data
 
+            self.rendered() 
+
             self.setup()
 
         })
 
-        this.rendered() 
+        
 
         this.interval = setInterval(function(){ self.generate(); }, 1000);
 
@@ -158,6 +160,8 @@ export class Smoke {
 
         var max = d3.max(cleaned)
 
+        console.log(`Domain: ${min}, ${max}`)
+
         return  { data : cleaned, width : tiffWidth, height : tiffHeight, domain : [min,max] }
 
     }
@@ -197,7 +201,7 @@ export class Smoke {
             name: 'Smoke screen',
             opacity: .5,
             renderer: new L.LeafletGeotiff.Plotty({
-                domain: [0,13],
+                domain: self.database.domain,
                 colorScale: 'viridis'
             })
         }
