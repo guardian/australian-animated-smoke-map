@@ -87,6 +87,7 @@ function buildJS(filename) {
                         }
                     ]
                 },
+                target: 'node',
                 devtool: 'source-map',
                 plugins: webpackPlugins
             }, webpack))
