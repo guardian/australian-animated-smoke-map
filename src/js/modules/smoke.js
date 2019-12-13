@@ -32,7 +32,7 @@ export class Smoke {
 
         this.settings.current = 0
 
-        this.settings.max = 20
+        this.settings.max = 26
 
         this.settings.geotiff = "<%= path %>/assets/test.tif"
 
@@ -73,7 +73,15 @@ export class Smoke {
 
         }).addTo(self.map);
 
-        var geojsonLayer =  L.geoJSON(self.settings.bbox).addTo(self.map);
+        var shadow = {
+            "weight": 0,
+            "opacity": 0
+        }
+
+
+        var geojsonLayer =  L.geoJSON(self.settings.bbox, {
+            style: shadow
+        }).addTo(self.map);
 
         self.map.fitBounds(geojsonLayer.getBounds());
 
@@ -102,7 +110,7 @@ export class Smoke {
 
         var self = this
 
-        this.requestAnimationFrame = requestAnimationFrame( function() {
+        //this.requestAnimationFrame = requestAnimationFrame( function() {
 
             self.getSample(self.settings.current).then( (sampled) => {
 
@@ -123,12 +131,11 @@ export class Smoke {
 
                 self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
 
-                self.renderLoop()
+                //self.renderLoop()
 
             })
-        })
+        //})
     }
-
 
     setup() {
 
@@ -205,7 +212,7 @@ export class Smoke {
                 var destinationImage = new Image;
 
                 destinationImage.onload = function(){
-                    ctx.clearRect(0, 0, width, height);
+                    ctx.clearRect(0, 0, params.size.x, params.size.y);
                     ctx.drawImage(destinationImage, sx, sy, sw, sh, dx, dy, dw, dh); 
                 };
 
@@ -221,9 +228,9 @@ export class Smoke {
 
         this.smokie.addTo(self.map);
 
-        this.renderLoop()
+        //this.renderLoop()
 
-        //self.interval = setInterval(function(){ self.generate(); }, 1000);
+        self.interval = setInterval(function(){ self.renderLoop(); }, 250);
 
     }
 
@@ -257,7 +264,7 @@ export class Smoke {
 
         var max = d3.max(cleaned)
 
-        console.log(`Domain: ${min}, ${max}`)
+        //console.log(`Domain: ${min}, ${max}`)
 
         return  { data : cleaned, domain : [min,max] }
 
@@ -273,7 +280,7 @@ export class Smoke {
 
             document.body.data = setTimeout( function() { 
 
-                console.log("Resized")
+                //console.log("Resized")
 
             }, 200);
 
@@ -281,7 +288,7 @@ export class Smoke {
 
         window.addEventListener("orientationchange", function() {
             
-            console.log("orientationchange")
+            //console.log("orientationchange")
             
         }, false);
 
