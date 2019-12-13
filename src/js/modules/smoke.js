@@ -218,7 +218,6 @@ export class Smoke {
 
         var plot = new plotty.plot({
           canvas: self.canvas,
-          band: self.settings.current,
           data: self.database.data,
           width: self.database.width,
           height: self.database.height,
