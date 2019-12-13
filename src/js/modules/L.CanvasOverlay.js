@@ -1,52 +1,77 @@
+
 /*
- UPDATE July 2016 , moved and updated to here: https://github.com/Sumbera/gLayers.Leaflet
- 
- Generic  Canvas Overlay for leaflet, 
- Stanislav Sumbera, April , 2014
-
- - added userDrawFunc that is called when Canvas need to be redrawn
- - added few useful params fro userDrawFunc callback
-  - fixed resize map bug
-  inspired & portions taken from  :   https://github.com/Leaflet/Leaflet.heat
+  Generic  Canvas Layer for leaflet 0.7 and 1.0-rc, 1.2, 1.3
+  copyright Stanislav Sumbera,  2016-2018, sumbera.com , license MIT
+  originally created and motivated by L.CanvasOverlay  available here: https://gist.github.com/Sumbera/11114288  
   
-  License: MIT
-
+  also thanks to contributors: heyyeyheman,andern,nikiv3, anyoneelse ?
+  enjoy !
 */
 
+// -- L.DomUtil.setTransform from leaflet 1.0.0 to work on 0.0.7
+//------------------------------------------------------------------------------
+L.DomUtil.setTransform = L.DomUtil.setTransform || function (el, offset, scale) {
+    var pos = offset || new L.Point(0, 0);
 
-L.CanvasOverlay = L.Class.extend({
+    el.style[L.DomUtil.TRANSFORM] =
+        (L.Browser.ie3d ?
+            'translate(' + pos.x + 'px,' + pos.y + 'px)' :
+            'translate3d(' + pos.x + 'px,' + pos.y + 'px,0)') +
+        (scale ? ' scale(' + scale + ')' : '');
+};
 
-    initialize: function (userDrawFunc, options) {
-        this._userDrawFunc = userDrawFunc;
+// -- support for both  0.0.7 and 1.0.0 rc2 leaflet
+L.CanvasLayer = (L.Layer ? L.Layer : L.Class).extend({ 
+    // -- initialized is called on prototype 
+    initialize: function (options) {
+        this._map    = null;
+        this._canvas = null;
+        this._frame  = null;
+        this._delegate = null;
         L.setOptions(this, options);
     },
 
-    drawing: function (userDrawFunc) {
-        this._userDrawFunc = userDrawFunc;
+    delegate :function(del){
+        this._delegate = del;
         return this;
     },
 
-    params:function(options){
-        L.setOptions(this, options);
-        return this;
-    },
-    
-    canvas: function () {
-        return this._canvas;
-    },
-
-    redraw: function () {
+    needRedraw: function () {
         if (!this._frame) {
-            this._frame = L.Util.requestAnimFrame(this._redraw, this);
+            this._frame = L.Util.requestAnimFrame(this.drawLayer, this);
         }
         return this;
     },
-
     
-  
+    //-------------------------------------------------------------
+    _onLayerDidResize: function (resizeEvent) {
+        this._canvas.width = resizeEvent.newSize.x;
+        this._canvas.height = resizeEvent.newSize.y;
+    },
+    //-------------------------------------------------------------
+    _onLayerDidMove: function () {
+        var topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, topLeft);
+        this.drawLayer();
+    },
+    //-------------------------------------------------------------
+    getEvents: function () {
+        var events = {
+            resize: this._onLayerDidResize,
+            moveend: this._onLayerDidMove,
+            zoom: this._onLayerDidMove
+        };
+        if (this._map.options.zoomAnimation && L.Browser.any3d) {
+            events.zoomanim =  this._animateZoom;
+        }
+
+        return events;
+    },
+    //-------------------------------------------------------------
     onAdd: function (map) {
         this._map = map;
-        this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer');
+        this._canvas = L.DomUtil.create('canvas', 'leaflet-layer');
+        this.tiles = {};
 
         var size = this._map.getSize();
         this._canvas.width = size.x;
@@ -58,79 +83,90 @@ L.CanvasOverlay = L.Class.extend({
 
         map._panes.overlayPane.appendChild(this._canvas);
 
-        map.on('moveend', this._reset, this);
-        map.on('resize',  this._resize, this);
-
-        if (map.options.zoomAnimation && L.Browser.any3d) {
-            map.on('zoomanim', this._animateZoom, this);
+        map.on(this.getEvents(),this);
+        
+        var del = this._delegate || this;
+        del.onLayerDidMount && del.onLayerDidMount(); // -- callback
+        this.needRedraw();
+    },
+    
+    //-------------------------------------------------------------
+    onRemove: function (map) {
+        var del = this._delegate || this;
+        del.onLayerWillUnmount && del.onLayerWillUnmount(); // -- callback
+   
+        if (this._frame) {
+            L.Util.cancelAnimFrame(this._frame);
         }
 
-        this._reset();
-    },
-
-    onRemove: function (map) {
         map.getPanes().overlayPane.removeChild(this._canvas);
  
-        map.off('moveend', this._reset, this);
-        map.off('resize', this._resize, this);
-
-        if (map.options.zoomAnimation) {
-            map.off('zoomanim', this._animateZoom, this);
-        }
-        this_canvas = null;
+        map.off(this.getEvents(),this);
+        
+        this._canvas = null;
 
     },
 
+    //------------------------------------------------------------
     addTo: function (map) {
         map.addLayer(this);
         return this;
     },
-
-    _resize: function (resizeEvent) {
-        this._canvas.width  = resizeEvent.newSize.x;
-        this._canvas.height = resizeEvent.newSize.y;
-    },
-    _reset: function () {
-        var topLeft = this._map.containerPointToLayerPoint([0, 0]);
-        L.DomUtil.setPosition(this._canvas, topLeft);
-        this._redraw();
+    // --------------------------------------------------------------------------------
+    LatLonToMercator: function (latlon) {
+        return {
+            x: latlon.lng * 6378137 * Math.PI / 180,
+            y: Math.log(Math.tan((90 + latlon.lat) * Math.PI / 360)) * 6378137
+        };
     },
 
-    _redraw: function () {
-        var size     = this._map.getSize();
-        var bounds   = this._map.getBounds();
-        var zoomScale = (size.x * 180) / (20037508.34  * (bounds.getEast() - bounds.getWest())); // resolution = 1/zoomScale
-        var zoom = this._map.getZoom();
-     
-        // console.time('process');
+    //------------------------------------------------------------------------------
+    drawLayer: function () {
+        // -- todo make the viewInfo properties  flat objects.
+        var size   = this._map.getSize();
+        var bounds = this._map.getBounds();
+        var zoom   = this._map.getZoom();
 
-        if (this._userDrawFunc) {
-            this._userDrawFunc(this,
-                                {
-                                    canvas   :this._canvas,
-                                    bounds   : bounds,
-                                    size     : size,
-                                    zoomScale: zoomScale,
-                                    zoom : zoom,
-                                    options: this.options
-                               });
-        }
-       
-       
-        // console.timeEnd('process');
-        
+        var center = this.LatLonToMercator(this._map.getCenter());
+        var corner = this.LatLonToMercator(this._map.containerPointToLatLng(this._map.getSize()));
+   
+        var del = this._delegate || this;
+        del.onDrawLayer && del.onDrawLayer( {
+                                                layer : this,
+                                                canvas: this._canvas,
+                                                bounds: bounds,
+                                                size: size,
+                                                zoom: zoom,
+                                                center : center,
+                                                corner : corner
+                                            });
         this._frame = null;
     },
+    // -- L.DomUtil.setTransform from leaflet 1.0.0 to work on 0.0.7
+    //------------------------------------------------------------------------------
+    _setTransform: function (el, offset, scale) {
+        var pos = offset || new L.Point(0, 0);
 
+        el.style[L.DomUtil.TRANSFORM] =
+            (L.Browser.ie3d ?
+                'translate(' + pos.x + 'px,' + pos.y + 'px)' :
+                'translate3d(' + pos.x + 'px,' + pos.y + 'px,0)') +
+            (scale ? ' scale(' + scale + ')' : '');
+    },
+
+    //------------------------------------------------------------------------------
     _animateZoom: function (e) {
-        var scale = this._map.getZoomScale(e.zoom),
-            offset = this._map._getCenterOffset(e.center)._multiplyBy(-scale).subtract(this._map._getMapPanePos());
+        var scale = this._map.getZoomScale(e.zoom);
+        // -- different calc of animation zoom  in leaflet 1.0.3 thanks @peterkarabinovic, @jduggan1 
+        var offset = L.Layer ? this._map._latLngBoundsToNewLayerBounds(this._map.getBounds(), e.zoom, e.center).min :
+                               this._map._getCenterOffset(e.center)._multiplyBy(-scale).subtract(this._map._getMapPanePos());
 
-        this._canvas.style[L.DomUtil.TRANSFORM] = L.DomUtil.getTranslateString(offset) + ' scale(' + scale + ')';
+        L.DomUtil.setTransform(this._canvas, offset, scale);
+
 
     }
 });
 
-L.canvasOverlay = function (userDrawFunc, options) {
-    return new L.CanvasOverlay(userDrawFunc, options);
+L.canvasLayer = function () {
+    return new L.CanvasLayer();
 };

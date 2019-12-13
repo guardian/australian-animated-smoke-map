@@ -5,6 +5,7 @@ import GoogleMapsLoader from 'google-maps';
 import mapstyles from '../modules/mapstyles.json'
 import L from 'leaflet/dist/leaflet-src' // Check it out... https://blog.webkid.io/rarely-used-leaflet-features/ '../modules/leaflet/dist/leaflet-src'
 import '../modules/Leaflet.GoogleMutant.js'
+import '../modules/L.CanvasOverlay.js'
 import * as plotty from 'plotty'
 var GeoTIFF = require('geotiff/dist/geotiff.bundle.js');
 import 'geotiff-layer-leaflet/dist/geotiff-layer-leaflet';
@@ -31,7 +32,7 @@ export class Smoke {
 
         this.settings.max = 20
 
-        this.settings.geotiff = "<%= path %>/assets/boom.tif"
+        this.settings.geotiff = "<%= path %>/assets/test.tif"
 
         this.settings.bbox = {
             "type": "Feature",
@@ -70,7 +71,7 @@ export class Smoke {
 
         }).addTo(self.map);
 
-        var geojsonLayer =  L.geoJSON(self.settings.bbox) //.addTo(self.map);
+        var geojsonLayer =  L.geoJSON(self.settings.bbox).addTo(self.map);
 
         self.map.fitBounds(geojsonLayer.getBounds());
 
@@ -78,49 +79,9 @@ export class Smoke {
 
             self.database = data
 
-            self.rendered() 
-
             self.setup()
 
         })
-
-        
-
-        this.interval = setInterval(function(){ self.generate(); }, 1000);
-
-        // "test@1" * 100000000
-        /*
-        "test@1" * 10000000 AND
-        "test@2" * 10000000 AND
-        "test@3" * 10000000 AND
-        "test@4" * 10000000 AND
-        "test@5" * 10000000 AND
-        "test@6" * 10000000 AND
-        "test@7" * 10000000 AND
-        "test@8" * 10000000 AND
-        "test@9" * 10000000 AND
-        "test@10" * 10000000 AND
-        "test@11" * 10000000 AND
-        "test@12" * 10000000 AND
-        "test@13" * 10000000 AND
-        "test@14" * 10000000 AND
-        "test@15" * 10000000 AND
-        "test@16" * 10000000 AND
-        "test@17" * 10000000 AND
-        "test@18" * 10000000 AND
-        "test@19" * 10000000 AND
-        "test@20" * 10000000 AND
-        "test@21" * 10000000 AND
-        "test@22" * 10000000 AND
-        "test@23" * 10000000 AND
-        "test@24" * 10000000 AND
-        "test@25" * 10000000 AND
-        "test@26" * 10000000 AND
-        "test@27" * 10000000 AND
-        "test@28" * 10000000 AND
-        "test@29" * 10000000 AND
-        "test@30" * 10000000
-        */
 
     }
 
@@ -134,7 +95,88 @@ export class Smoke {
         self.canvas.width  = self.database.width;
         self.canvas.height = self.database.height;
         document.body.appendChild(self.canvas);
-        self.generate()
+
+        var smokeMap = function() {
+
+            this.onLayerDidMount = function (){      
+                // prepare custom drawing    
+            };
+
+            this.onLayerWillUnmount  = function(){
+                // custom cleanup    
+            };
+
+            this.setData = function (data={}) {
+
+                this.needRedraw();
+
+            };
+
+            this.onDrawLayer = function (params) {
+
+                /*
+                canvas   : <canvas>,
+                bounds   : <bounds in WGS84>
+                size     : <view size>,
+                zoomScale: <zoom scale is  1/resolution>,
+                zoom     : <current zoom>,
+                options  : <options passed >
+                */
+
+                //var dot = self.map.latLngToContainerPoint([d[0], d[1]]);
+
+                var ctx = params.canvas.getContext('2d');
+                ctx.globalAlpha = 0.5;
+                /*
+                Source image origin (small canvas)
+                */
+                var sx = 0
+                var sy = 0
+                var sw = self.database.width
+                var sh = self.database.height
+
+                /*
+                Position of map canvas we are rendering to
+                */
+                var nw = params.layer._map.latLngToContainerPoint([-1.000000048,125.80000000000001]);
+                var se = params.layer._map.latLngToContainerPoint([-52.2,194.2])   
+
+                /*
+                Coordinates of desination canvas
+                */
+                var dx = nw.x
+                var dy = nw.y
+                var dw = se.x - nw.x
+                var dh = se.y - nw.y
+                var width = se.x - nw.x
+                var height = se.y - nw.y
+
+                // select canvas elements
+                var sourceCanvas = document.getElementById("SmokeLayer");
+
+                //copy canvas by DataUrl
+                var sourceImageData = sourceCanvas.toDataURL("image/png");
+
+                var destinationImage = new Image;
+
+                destinationImage.onload = function(){
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.drawImage(destinationImage, sx, sy, sw, sh, dx, dy, dw, dh); 
+                };
+
+                destinationImage.src = sourceImageData;
+
+            }
+
+        }
+          
+        smokeMap.prototype = new L.CanvasLayer(); 
+          
+        this.smokie = new smokeMap();
+
+        this.smokie.addTo(self.map);
+
+        self.interval = setInterval(function(){ self.generate(); }, 1000);
 
     }
 
@@ -154,7 +196,7 @@ export class Smoke {
 
         var values = (await image.readRasters())[0]
 
-        var cleaned = values.map( item => (item).toFixed(20) * 1)
+        var cleaned = values.map( item => (item).toFixed(20) * 100000000)
 
         var min = d3.min(cleaned)
 
@@ -170,14 +212,12 @@ export class Smoke {
 
         var self = this
 
-        console.log(self.settings.current)
+        console.log(`Band: ${self.settings.current}`)
 
         this.context.clearRect(0, 0, self.database.width, self.database.height);
 
-        var canvas = self.canvas
-
         var plot = new plotty.plot({
-          canvas,
+          canvas: self.canvas,
           band: self.settings.current,
           data: self.database.data,
           width: self.database.width,
@@ -188,29 +228,9 @@ export class Smoke {
 
         plot.render();
 
+        this.smokie.setData()
+
         self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
-
-    }
-
-    rendered() {
-
-        var self = this
-
-        var options = { 
-            band: 0,
-            name: 'Smoke screen',
-            opacity: .5,
-            renderer: new L.LeafletGeotiff.Plotty({
-                domain: self.database.domain,
-                colorScale: 'viridis'
-            })
-        }
-
-        self.smoke = new L.LeafletGeotiff(
-
-            self.settings.geotiff, options
-
-        ).addTo(self.map);
 
     }
 
