@@ -12,6 +12,8 @@ import 'geotiff-layer-leaflet/dist/geotiff-layer-leaflet';
 import 'geotiff-layer-leaflet/src/geotiff-layer-leaflet-plotty';
 import 'geotiff-layer-leaflet/src/geotiff-layer-leaflet-vector-arrows';
 
+// https://github.com/geotiffjs/geotiff.js/blob/master/README.md
+
 export class Smoke {
 
     constructor() {
@@ -84,6 +86,49 @@ export class Smoke {
         })
 
     }
+
+    cancelAFrame() {
+
+        var self = this
+            
+        if (self.requestAnimationFrame) {
+           window.cancelAnimationFrame(self.requestAnimationFrame);
+           self.requestAnimationFrame = undefined;
+        }
+
+    }
+
+    renderLoop() {
+
+        var self = this
+
+        this.requestAnimationFrame = requestAnimationFrame( function() {
+
+            self.getSample(self.settings.current).then( (sampled) => {
+
+                self.context.clearRect(0, 0, self.database.width, self.database.height);
+
+                var plot = new plotty.plot({
+                  canvas: self.canvas,
+                  data: sampled.data,
+                  width: self.database.width,
+                  height: self.database.height,
+                  domain: sampled.domain,
+                  colorScale: "viridis"
+                });
+
+                plot.render();
+
+                self.smokie.setData()
+
+                self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
+
+                self.renderLoop()
+
+            })
+        })
+    }
+
 
     setup() {
 
@@ -176,7 +221,9 @@ export class Smoke {
 
         this.smokie.addTo(self.map);
 
-        self.interval = setInterval(function(){ self.generate(); }, 1000);
+        this.renderLoop()
+
+        //self.interval = setInterval(function(){ self.generate(); }, 1000);
 
     }
 
@@ -213,35 +260,6 @@ export class Smoke {
         console.log(`Domain: ${min}, ${max}`)
 
         return  { data : cleaned, domain : [min,max] }
-
-    }
-
-    generate() {
-
-        var self = this
-
-        console.log(`Band: ${self.settings.current}`)
-
-        this.getSample(self.settings.current).then( (sampled) => {
-
-            self.context.clearRect(0, 0, self.database.width, self.database.height);
-
-            var plot = new plotty.plot({
-              canvas: self.canvas,
-              data: sampled.data,
-              width: self.database.width,
-              height: self.database.height,
-              domain: sampled.domain,
-              colorScale: "viridis"
-            });
-
-            plot.render();
-
-            self.smokie.setData()
-
-            self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
-
-        })
 
     }
 
