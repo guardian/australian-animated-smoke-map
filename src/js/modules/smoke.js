@@ -188,13 +188,21 @@ export class Smoke {
           .then(response => response.arrayBuffer())
           .then(buffer => GeoTIFF.fromArrayBuffer(buffer))
 
-        var image = await tiff.getImage();
+        this.image = await tiff.getImage();
 
-        var tiffWidth = await image.getWidth();
+        var tiffWidth = await this.image.getWidth();
 
-        var tiffHeight = await image.getHeight();
+        var tiffHeight = await this.image.getHeight();
 
-        var values = (await image.readRasters())[0]
+        return  { width : tiffWidth, height : tiffHeight }
+
+    }
+
+    async getSample(sample) {
+
+        var self = this
+
+        var values = (await self.image.readRasters({ samples: [sample] }))[0]
 
         var cleaned = values.map( item => (item).toFixed(20) * 100000000)
 
@@ -204,7 +212,7 @@ export class Smoke {
 
         console.log(`Domain: ${min}, ${max}`)
 
-        return  { data : cleaned, width : tiffWidth, height : tiffHeight, domain : [min,max] }
+        return  { data : cleaned, domain : [min,max] }
 
     }
 
@@ -214,22 +222,26 @@ export class Smoke {
 
         console.log(`Band: ${self.settings.current}`)
 
-        this.context.clearRect(0, 0, self.database.width, self.database.height);
+        this.getSample(self.settings.current).then( (sampled) => {
 
-        var plot = new plotty.plot({
-          canvas: self.canvas,
-          data: self.database.data,
-          width: self.database.width,
-          height: self.database.height,
-          domain: self.database.domain,
-          colorScale: "viridis"
-        });
+            self.context.clearRect(0, 0, self.database.width, self.database.height);
 
-        plot.render();
+            var plot = new plotty.plot({
+              canvas: self.canvas,
+              data: sampled.data,
+              width: self.database.width,
+              height: self.database.height,
+              domain: sampled.domain,
+              colorScale: "viridis"
+            });
 
-        this.smokie.setData()
+            plot.render();
 
-        self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
+            self.smokie.setData()
+
+            self.settings.current = (self.settings.current < self.settings.max ) ? self.settings.current + 1 : 0 ;
+
+        })
 
     }
 
